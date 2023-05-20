@@ -1,0 +1,674 @@
+---
+title: "Absenteeism at work analysis and classification"
+author: "Aziz Sghaier"
+date: "2023-05-17"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+# Dataset information
+
+The database was created with records of absenteeism at work from July 2007 to July 2010 at a courier company in Brazil.
+
+You can find the database as well as additional information at the link below.
+
+[Absenteeism at work - UC Irvine Machine Learning Repository](https://archive-beta.ics.uci.edu/dataset/445/absenteeism+at+work)
+
+# **Attribute Information**
+
+1\.
+Individual identification (ID)
+
+2\.
+Reason for absence (ICD).
+
+Absences attested by the International Code of Diseases (ICD) stratified into 21 categories (I to XXI) as follows:
+
+ 
+
+I Certain infectious and parasitic diseases  
+
+II Neoplasms  
+
+III Diseases of the blood and blood-forming organs and certain disorders involving the immune mechanism  
+
+IV Endocrine, nutritional and metabolic diseases  
+
+V Mental and behavioural disorders  
+
+VI Diseases of the nervous system  
+
+VII Diseases of the eye and adnexa  
+
+VIII Diseases of the ear and mastoid process  
+
+IX Diseases of the circulatory system  
+
+X Diseases of the respiratory system  
+
+XI Diseases of the digestive system  
+
+XII Diseases of the skin and subcutaneous tissue  
+
+XIII Diseases of the musculoskeletal system and connective tissue  
+
+XIV Diseases of the genitourinary system  
+
+XV Pregnancy, childbirth and the puerperium  
+
+XVI Certain conditions originating in the perinatal period  
+
+XVII Congenital malformations, deformations and chromosomal abnormalities  
+
+XVIII Symptoms, signs and abnormal clinical and laboratory findings, not elsewhere classified  
+
+XIX Injury, poisoning and certain other consequences of external causes  
+
+XX External causes of morbidity and mortality  
+
+XXI Factors influencing health status and contact with health services.
+
+ 
+
+And 7 categories without (CID) patient follow-up (22), medical consultation (23), blood donation (24), laboratory examination (25), unjustified absence (26), physiotherapy (27), dental consultation (28).
+
+3\.
+Month of absence
+
+4\.
+Day of the week (Monday (2), Tuesday (3), Wednesday (4), Thursday (5), Friday (6))
+
+5\.
+Seasons
+
+6\.
+Transportation expense
+
+7\.
+Distance from Residence to Work (kilometers)
+
+8\.
+Service time
+
+9\.
+Age
+
+10\.
+Work load Average/day
+
+11\.
+Hit target
+
+12\.
+Disciplinary failure (yes=1; no=0)
+
+13\.
+Education (high school (1), graduate (2), postgraduate (3), master and doctor (4))
+
+14\.
+Son (number of children)
+
+15\.
+Social drinker (yes=1; no=0)
+
+16\.
+Social smoker (yes=1; no=0)
+
+17\.
+Pet (number of pet)
+
+18\.
+Weight
+
+19\.
+Height
+
+20\.
+Body mass index
+
+21\.
+Absenteeism time in hours (variable that will be used to build the categorical target)
+
+# Importing libraries and data set
+
+Here are the libraries that we will use in this project.
+
+```{r}
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(e1071)
+library(randomForest)
+library(corrplot)
+library(FactoMineR)
+library(factoextra)
+library(rpart)
+library(rpart.plot)
+library(MLmetrics)
+library(pROC)
+```
+
+Let's start by importing the data into a variable named data.
+
+```{r}
+data=read_excel("Absenteeism_at_work.xls")
+```
+
+Let's check the 6 first rows of the dataset.
+
+```{r}
+head(data)
+```
+
+Now the last ones.
+
+```{r}
+tail(data)
+```
+
+Let's check the number of individuals in our dataset.
+
+```{r}
+nrow(data)
+```
+
+We have 740 individuals in the dataset.
+
+Now let's check the columns.
+
+```{r}
+ncol(data)
+colnames(data)
+```
+
+In this dataset, we have 21 variables in total and these are the names for each of them: "ID" "Reason for absence" "Month of absence"\
+"Day of the week" "Seasons" "Transportation expense"\
+"Distance from Residence to Work" "Service time" "Age"\
+"Work load Average/day" "Hit target" "Disciplinary failure"\
+"Education" "Son" "Social drinker"\
+"Social smoker" "Pet" "Weight"\
+"Height" "Body mass index" "Absenteeism time in hours"
+
+# Data Pre-processing
+
+We will remove the column ID because it won't be of any use in our analysis.
+
+```{r}
+data<-data[,-1]
+```
+
+When exploring the variables of the dataset, we noticed that they're names aren't suited for the analysis since they contain blanks and spaces, that's why we will need to change the column names for an easier analysis
+
+```{r}
+colnames(data) <- c('Reason', 'Month', 'Day', 
+'Seasons','Tran_expense', 'Distance', 'Service_time', 'Age','Workload'
+, 'Hit_target', 'Disciplinary_failure', 'Education', 'children', 'drinker'
+, 'smoker', 'pet', 'weight', 'height', 'body_mass', 'hour')
+```
+
+Let's check if there are any missing values in each column.
+
+```{r}
+as.data.frame(colSums(is.na(data)))
+```
+
+Let's check the types of each variables
+
+```{r}
+str(data)
+```
+
+We notice that some columns are mistyped here.
+Columns like 'Reason' which indicated the reason for absence should be of a factor type and not numeric, and the same goes for multiple other columns.
+Let's fix that.
+
+```{r}
+data[, c(1:4, 10:12, 14:15)] <- lapply(data[, c(1:4, 10:12, 14:15)], as.factor)
+str(data)
+```
+
+After setting up the types we notice now that the column 'Month of absence' contains some invalid values: 0 for the month of absence does not make sense since there are 12 months ranging from 1 to 12.
+That's why we will need to get rid of these lines to not bias the analysis.
+
+```{r}
+data <- data[data$Month != "0", ]
+nrow(data)
+```
+
+Since the target is a numerical variable, we will create an artificial categorical variable that we will use as a target in our classification models.
+
+```{r}
+median(data$hour)
+data <- mutate(data, hour=ifelse(data$hour>3,1,0))
+```
+
+The median of the column 'hour' is 3, that means that the median of absenteeism hours in the dataset in 3 hours.
+For our artificial categorical variable, if the number of hours is above 3 the target will be 1 , else the target will get 0.
+
+And now let's convert the target into a factor type variable.
+
+```{r}
+data$hour<- as.factor(data$hour)
+```
+
+The next step is a crucial step in each data analysis task, the data scaling/standardization.
+It is important since the numeric columns have different scales and it would be better for the models to be trained with scaled data.
+
+```{r}
+num_cols = sapply(data, is.numeric)
+data_scaled<-data
+data_scaled[, num_cols] = scale(data[, num_cols])
+head(data_scaled)
+```
+
+We successfuly created a new dataset named 'data_scaled' that contains the scaled numerical variables of the dataset 'data' as well as the categorical variables and the target.
+
+# Exploratory Data Analysis
+
+Summary statistics
+
+```{r}
+summary(data)
+```
+
+Here, we can check the distributions of the numerical variables as well as the frequencies for the categorical variables.
+
+## Categorical variables analysis
+
+Bar plot of Reason for absence
+
+```{r}
+df<-as.data.frame(table(data$Reason))
+ggplot(data=df, aes(x=Var1, y=Freq, fill=Var1)) + 
+    geom_bar(colour="black", fill="#DD8888", width=.8, stat="identity") + 
+    guides(fill=FALSE) +
+    xlab("Reason for absence") + ylab("Number of individuals")  
+```
+
+The most common reasons for absence in this case are 28 (dental consultation), 23 (medical consultation), 27 (physiotherapy ), 13 (Diseases of the musculoskeletal system and connective tissue ) and 0 (No specified reason).
+
+Distribution of Month of absence
+
+```{r}
+ggplot(data, aes(x = Month)) +
+  geom_bar(colour="black", fill="#DD8888") +
+  labs(x = "Month of absence", y = "Count") +
+  ggtitle("Distribution of Month of Absence")
+```
+
+There are no remarkable peaks for absences distributed by the month except for months February, March, May, July, October and November that might have a higher absence rate compared to the rest of the months.
+
+Piechart for absence by days of the week
+
+```{r}
+ggplot(data, aes(x = "")) +
+  geom_bar(aes(fill = Day), width = 1) +
+  coord_polar("y", start = 0) +
+  labs(fill = "Day of the week") +
+  ggtitle("Distribution of Day of the week") +
+  theme_minimal() +
+  theme(axis.text = element_blank(), axis.ticks = element_blank())
+```
+
+Absence during days of the week seem to be equilibrated between each of the days.
+There is no particular trend according to the piechart.
+
+Piechart for absence by seasons
+
+```{r}
+ggplot(data, aes(x = "")) +
+  geom_bar(aes(fill = Seasons), width = 1) +
+  coord_polar("y", start = 0) +
+  labs(fill = "Seasons") +
+  ggtitle("Distribution of season") +
+  theme_minimal() +
+  theme(axis.text = element_blank(), axis.ticks = element_blank())
+```
+
+Absence during seasons seem to be equilibrated between each season.
+There is no particular trend according to the piechart.
+
+## Numerical variables
+
+Boxplot of Absenteeism time in hours by Day of the week
+
+```{r}
+datamelted = melt(data_scaled[,num_cols])
+ggplot(datamelted, aes(x=variable, y=value, fill=value)) + geom_boxplot()
+```
+
+Except for the variable 'pet' which indicates the number of pets owned by each individual, the rest of numerical variables seem to have similar distributions and their medians have very close values (due to scaling).
+
+Let's check if there is a an influence from the variable 'Distance' (the one that indicates the distance from work to home) on the variable 'Trans_expense' (The one that indicates the budget allocated for transportation expenses by each individual)
+
+```{r}
+ggplot() + 
+  aes(x= data$Distance,y= data$Tran_expense) + 
+  geom_point() + 
+  geom_smooth(method = 'lm') + 
+  labs(title='Distance/Transportation expense relationship',
+       x='Distance',
+       y='Transportation expense')
+```
+
+We notice that there is a weak relationship between the two variables that means that the distance doesn't affect significantly the transportation expenses.
+
+Let's check if there is a an influence from the variable 'Age' (the one that indicates the age of the individual) on the variable 'Service_time' (The one that indicates the service time in hours for each individual)
+
+```{r}
+ggplot() + 
+  aes(x= data$Age,y= data$Service_time) + 
+  geom_point() + 
+  geom_smooth(method = 'lm') + 
+  labs(title='Analysis of Service time across Age',
+       x='Age',
+       y='Service time')
+```
+
+According to the graph, there's an average and postive influence from the age on the service time (that means that service time will rise if the age rises)
+
+Now we need to make our correlation matrix for our numerical variables.
+
+```{r}
+nm<-c(5,6,7,8,9,13,17,18,19)
+correlation_matrix <- cor(data[, nm])
+correlation_matrix
+```
+
+And based on that we can make our correlation heatmap.
+
+```{r}
+corrplot(correlation_matrix, method = "color")
+```
+
+Now we can see some new relationships between the variables.
+The variables 'body_mass' and 'weight' have a strong and positive correlation.
+The variables 'Age' and 'Service time' have a moderate positive correlation.
+
+# Principal Component Analysis
+
+In this part, we will tackle the PCA (Principal Component Analysis) of our dataset.
+
+First let's apply the PCA using our numerical scaled dataset and use the categorical variables as supplementary qualitative variables.
+
+```{r}
+res.pca=PCA(data_scaled,quali.sup = -nm)
+```
+
+The output of the PCA function gave us both individuals and variables PCA graphs but we will interpret them later.
+Now let's check how many dimension should we retain based both on the eigen values barplot and Kaiser-Guttman rule.
+
+Using the eigenvalues /variance barplot.
+
+```{r}
+fviz_eig(res.pca,addlabels=T)
+```
+
+The scree plot shows the proportion of variance explained by each principal component.
+The eigenvalues (variance) are represented on the y-axis, and the number of principal components is shown on the x-axis.
+The scree plot helps in determining the optimal number of principal components to retain.
+In this case, we can observe a significant drop in eigenvalues after the first few components, suggesting that the first few So, we decide to select only the first two components with a cumulative variance equals to 50.15%.
+
+Let's check if it would be the same using the Kaiser-Guttman rule.
+
+```{r}
+res.pca$eig
+```
+
+The Kaiser-Guttman rule states that components based on eigenvalues greater than 1 should be retained.
+In our case, component 1, 2, 3 and 4 have eigenvalues greater than 1 so we retain the four first components with a cumulative percentage of variance 74.63%.
+
+```{r}
+fviz_pca_ind(res.pca)
+```
+
+The scatter plot displays the representation of individuals (data points) in the PCA space.
+Each data point is plotted based on its coordinates in the principal components.
+
+Variable Contributions: Contribution of variables to the principal components
+
+```{r}
+fviz_contrib(res.pca, choice = "var", axes = 1:2,
+             title = "Variable Contributions: Principal Components 1 and 2")
+```
+
+The variable contributions plot shows the contribution of variables to each principal component.
+The larger the bar for a variable, the more it contributes to that specific principal component.
+This plot helps in identifying variables that have the most influence in shaping the principal components.
+In our case, the variables 'children and 'Workload' have no influence on the first 2 components, in contrast to 'body_mass' and 'weight' for example that have the most influence on PC1 and PC2.
+
+Biplot: Representation of variables and individuals in the PCA space
+
+```{r}
+fviz_pca_biplot(res.pca, label = "var",
+                 geom = "point",
+                title = "PCA Biplot: Variables and Individuals")
+```
+
+This biplot provides a graphical representation of both variables and individuals in the PCA space.
+The variables are represented by arrows, indicating their directions and contributions to the principal components.
+The individuals (data points) are represented by dots.
+This plot helps in identifying relationships between variables and individuals.
+
+# Supervised learning
+
+Before moving to any model, let's start by dividing our data into train set and test set.
+
+```{r}
+set.seed(0)
+train_index <- sample(1:nrow(data_scaled), 0.8*nrow(data_scaled))
+train_data <- data_scaled[train_index, ]
+test_data <- data_scaled[-train_index, ]
+```
+
+## Decision Tree
+
+First we will build our decision tree without tuning the parameters
+
+```{r}
+Tree <- rpart(hour~.,data = data_scaled)
+rpart.plot(Tree)
+```
+
+Now we will check the tree's complexity in order to minimize xerror build the optimal tree using cpoptimal and optplit.
+
+```{r}
+TC= Tree$cptable
+cpoptimal=TC[which.min(TC[,4]),1]
+cpoptimal
+optsplit=TC[which.min(TC[,4]),2]
+Toptimal <- rpart(hour~., data=data_scaled,cp=cpoptimal,control=rpart.control(minsplit = optsplit))
+rpart.plot(Toptimal)
+```
+
+We notice that the optimal tree is the same as the first tree, there is need for hyper-parameters tuning in this case.
+
+Now let's move into training our tree.
+
+```{r}
+Toptimal_train <- rpart(hour~., data=train_data,cp=cpoptimal,control=rpart.control(minsplit = optsplit))
+
+```
+
+Now we will use our model to make predictions and build a confusion matrix.
+
+```{r}
+pred_dt=predict(Toptimal_train,test_data,type="class")
+cmdt<-table(test_data$hour,pred_dt)
+cmdt
+```
+
+```{r}
+Accuracy(pred_dt,test_data$hour)
+Precision(test_data$hour,pred_dt)
+Recall(test_data$hour,pred_dt)
+F1_Score(test_data$hour,pred_dt)
+```
+
+## Logistic Regression
+
+Let's try the Logistic Regression Model since our target has only 2 levels.
+
+Let's start by the backwards selection model
+
+```{r}
+backward_model <- glm(hour ~ ., data = train_data, family = binomial)
+backward_best <- step(backward_model, direction = "backward")
+```
+
+Now the forward selection model
+
+```{r}
+forward_model <- glm(hour ~ 1, data = train_data, family = binomial)
+forward_best <- step(forward_model, direction = "forward", scope = formula(backward_best))
+```
+
+Now we should compare the 2 models in terms of AIC and should our best model (The one that minimizes the AIC).
+
+```{r}
+if (AIC(backward_best) < AIC(forward_best)) {
+  best_model <- backward_best
+} else {
+  best_model <- forward_best
+}
+```
+
+Let's make some predictions using the best model to build the confusion matrix.
+
+```{r}
+pred_logreg <- predict(best_model, newdata = test_data, type = "response")
+pred_logreg_class <- ifelse(pred_logreg >= 0.5, 1, 0)
+cmlogreg <- table(pred_logreg_class, test_data$hour)
+cmlogreg
+```
+
+Let's evaluate this model with the classification metrics.
+
+```{r}
+Accuracy(pred_logreg_class,test_data$hour)
+Precision(test_data$hour,pred_logreg_class)
+Recall(test_data$hour,pred_logreg_class)
+F1_Score(test_data$hour,pred_logreg_class)
+```
+
+## Gaussian Naive Bayes
+
+Now let's move to our second model: Gaussian Naive Bayes
+
+First we build our model and train it with the train set.
+
+```{r}
+nb_model <- naiveBayes(hour ~ ., data = train_data)
+```
+
+Now we will make our prediciton using the trained model to build the confusion matrix.
+
+```{r}
+pred_nb <- predict(nb_model, newdata = test_data)
+cmnb=table(pred_nb, test_data$hour)
+cmnb
+```
+
+Finally, let's evaluate the model using the classification metrics.
+
+```{r}
+Accuracy(pred_nb,test_data$hour)
+Precision(test_data$hour,pred_nb)
+Recall(test_data$hour,pred_nb)
+F1_Score(test_data$hour,pred_nb)
+```
+
+## SVM (Support Vector Machine)
+
+As usual, we start by building and training the model.
+
+```{r}
+svm_model <- svm(hour ~ ., data = train_data)
+```
+
+Then we make some predictions to build the confusion matrix.
+
+```{r}
+pred_svm <- predict(svm_model, newdata = test_data)
+cmsvm=table(pred_svm, test_data$hour)
+cmsvm
+```
+
+And in the end we finish by evaluating the model using classification metrics.
+
+```{r}
+Accuracy(pred_svm,test_data$hour)
+Precision(test_data$hour,pred_svm)
+Recall(test_data$hour,pred_svm)
+F1_Score(test_data$hour,pred_svm)
+```
+
+## Random Forest
+
+We start by building the model and training it.
+
+```{r}
+rf_model <- randomForest(hour ~ ., data = train_data)
+```
+
+We make predictions to build confusion matrix.
+
+```{r}
+pred_rf <- predict(rf_model, newdata = test_data)
+table(pred_rf, test_data$hour)
+```
+
+And finally we evaluate the model using classification metrics.
+
+```{r}
+Accuracy(pred_rf,test_data$hour)
+Precision(test_data$hour,pred_rf)
+Recall(test_data$hour,pred_rf)
+F1_Score(test_data$hour,pred_rf)
+```
+
+# Comparison of models
+
+## Comparative table
+
+| Model                | Accuracy | Precision | Recall | F1-Score |
+|----------------------|----------|-----------|--------|----------|
+| Decision Tree        | 0.7500   |  0.7407   | 0.7894 | 0.7643   |
+| Logistic Regression  | 0.7432   | 0.7375    | 0.7763 | 0.7564   |
+| Gaussian Naive Bayes | 0.7500   | 0.7746    | 0.7236 | 0.7482   |
+| SVM                  | 0.7432   | 0.7261    | 0.8026 | 0.7625   |
+| Random Forest        | 0.7635   | 0.7887    | 0.7368 | 0.7619   |
+
+According to this table, the classification metrics scores of each model are quite similar with the Decision Tree having the highest F1-Score, Random Forest having the highest Accuracy and Precision, and SVM having the highest recall.\
+
+## ROC curve
+
+The classification metrics were not enough to choose the best model so let's make a ROC curve to determine the optimal model for this classification problem.
+
+```{r}
+roc_rf <- roc(test_data$hour, as.numeric(pred_rf))
+roc_nb <- roc(test_data$hour, as.numeric(pred_nb))  # Convert prev_nb to numeric if needed
+roc_dt <- roc(test_data$hour, as.numeric(pred_dt))
+roc_logreg <- roc(test_data$hour, pred_logreg_class)
+roc_svm <- roc(test_data$hour,as.numeric(pred_svm))
+
+roc_data <- rbind(
+  data.frame(model = "Random Forest", sensitivity = roc_rf$sensitivities, specificity = 1 - roc_rf$specificities),
+  data.frame(model = "Naive Bayes", sensitivity = roc_nb$sensitivities, specificity = 1 - roc_nb$specificities),
+  data.frame(model = "Decision Tree", sensitivity = roc_dt$sensitivities, specificity = 1 - roc_dt$specificities),
+  data.frame(model = "Logistic Regression", sensitivity = roc_logreg$sensitivities, specificity = 1 - roc_logreg$specificities),
+  data.frame(model = "SVM", sensitivity = roc_svm$sensitivities, specificity = 1 - roc_svm$specificities)
+)
+
+ggplot(roc_data, aes(x = specificity, y = sensitivity, color = model)) +
+  geom_line() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(x = "False Positive Rate", y = "True Positive Rate", title = "ROC Curve") +
+  theme_minimal()
+
+```
+
+According to the curve above, the optimal model we can rely on for this classification problem is Random Forest.
